@@ -79,6 +79,7 @@
       <div class="spacer"></div>
       <button class="btn primary" id="addBtn">+ Add CSV files</button>
       <button class="btn" id="exportBtn">Export set</button>
+      <button class="btn" id="unloadBtn">Unload published</button>
       <button class="btn ghost" id="resetBtn">Reset</button>
       <input type="file" id="fileInput" accept=".csv,.json" multiple>
     </div>
@@ -95,20 +96,46 @@
 <div class="toast" id="toast"></div>
 
 <script>
-const STARTER = [];
-
 const FIXED={'OEM':'#111827','XYIRMCYF2026':'#2563eb','CameronSino2026':'#0d9488','iFixit2024':'#d97706','Ostent2026':'#dc2626'};
 const LABELS={'OEM':'OEM (genuine Nintendo)','XYIRMCYF2026':'XYIRMCYF','CameronSino2026':'Cameron Sino','iFixit2024':'iFixit','Ostent2026':'Ostent'};
 const POOL=['#7c3aed','#db2777','#0891b2','#65a30d','#4f46e5','#be123c','#c026d3','#0284c7','#16a34a','#ca8a04','#9333ea','#e11d48'];
 const DASH=['','7,5','2,4','9,4,2,4'];
 
-/* ---------- persistence ---------- */
-function save(){try{localStorage.setItem('btnRuns',JSON.stringify(runs));localStorage.setItem('btnInit','1');}catch(e){}}
-let runs;
-try{
-  if(localStorage.getItem('btnInit')) runs=JSON.parse(localStorage.getItem('btnRuns')||'[]');
-  else { runs=STARTER.slice(); save(); }
-}catch(e){ runs=STARTER.slice(); }
+/* ---------- state ---------- */
+const PUBLISHED_URL='battery_set.json';   // auto-loaded from the same folder as this page
+let runs=[];                 // everything currently shown (published baseline + user-added)
+let publishedRuns=[];        // runs loaded from battery_set.json
+let publishedIds=new Set();  // ids that belong to the published baseline
+let baselineUnloaded=false;  // true once the visitor unloads the published data
+
+/* ---------- persistence (only the visitor's own added runs are stored) ---------- */
+function userRunsList(){return runs.filter(r=>!publishedIds.has(r.id));}
+function save(){try{
+  localStorage.setItem('btnUserRuns',JSON.stringify(userRunsList()));
+  localStorage.setItem('btnUnloaded',baselineUnloaded?'1':'0');
+}catch(e){}}
+function loadUserRuns(){try{const s=localStorage.getItem('btnUserRuns');const a=s?JSON.parse(s):[];return Array.isArray(a)?a:[];}catch(e){return [];}}
+function ensureId(r){if(!r.id)r.id=((r.name||'battery')+'-'+(r.date||'')+'-'+(r.clock||'')+'-'+Math.random().toString(36).slice(2,6)).toLowerCase().replace(/[^a-z0-9.-]/g,'');return r;}
+function rebuildRuns(userRuns){
+  const out=[],seen=new Set();
+  if(!baselineUnloaded) publishedRuns.forEach(r=>{out.push(r);seen.add(r.id);});
+  (userRuns||[]).forEach(r=>{ensureId(r);if(!seen.has(r.id)){out.push(r);seen.add(r.id);}});
+  runs=out;
+}
+async function fetchPublished(){
+  try{
+    const res=await fetch(PUBLISHED_URL,{cache:'no-store'});
+    if(!res.ok) throw new Error('HTTP '+res.status);
+    const data=await res.json();
+    if(Array.isArray(data)){
+      publishedRuns=data.filter(r=>r&&Array.isArray(r.elapsed)&&Array.isArray(r.pct)).map(ensureId);
+      publishedIds=new Set(publishedRuns.map(r=>r.id));
+      return true;
+    }
+  }catch(e){ console.warn('battery_set.json not loaded:',e.message); }
+  publishedRuns=[];publishedIds=new Set();
+  return false;
+}
 
 /* ---------- CSV parsing (Battery Mark v2) ---------- */
 function parseCSV(filename,text){
@@ -134,7 +161,7 @@ function parseCSV(filename,text){
 }
 
 function addFiles(fileList){
-  let added=0,skipped=0,imported=0;
+  let added=0,skipped=0;
   const arr=[...fileList];let pending=arr.length;
   if(!pending) return;
   arr.forEach(file=>{
@@ -143,7 +170,13 @@ function addFiles(fileList){
       try{
         if(/\.json$/i.test(file.name)){
           const data=JSON.parse(rd.result);
-          if(Array.isArray(data)&&data.every(r=>r.elapsed&&r.pct)){runs=data;imported++;}
+          if(Array.isArray(data)){
+            data.filter(r=>r&&Array.isArray(r.elapsed)&&Array.isArray(r.pct)).forEach(r=>{
+              ensureId(r);
+              if(runs.some(x=>x.id===r.id)){skipped++;}
+              else{runs.push(r);added++;}
+            });
+          }
         }else{
           const r=parseCSV(file.name,rd.result);
           if(!r){skipped++;}
@@ -154,10 +187,9 @@ function addFiles(fileList){
       if(--pending===0){
         save();render();
         let msg=[];
-        if(imported)msg.push('Restored set from file');
         if(added)msg.push(added+' run'+(added>1?'s':'')+' added');
         if(skipped)msg.push(skipped+' skipped (duplicate or unrecognized)');
-        toast(msg.join(' · ')||'Nothing to add');
+        toast(msg.join(' · ')||'Nothing new to add');
       }
     };
     rd.readAsText(file);
@@ -215,7 +247,7 @@ function bounds(){
 function draw(){
   chart.innerHTML='';
   if(visibleRuns().length===0){
-    txt(W/2,H/2,'No batteries to show — add CSV files or un-hide a battery',' middle','#94a3b8',15);
+    txt(W/2,H/2,'No batteries loaded — drop Battery Mark CSV files here to add your own','middle','#94a3b8',15);
     chart._b=null;return;
   }
   const b=bounds();
@@ -288,7 +320,7 @@ function render(){
     `${runs.length} run${runs.length>1?'s':''} across ${brandsPresent().length} batter${brandsPresent().length>1?'ies':'y'}. `+
     `Runtime is measured over each test's discharge window (min&nbsp;per&nbsp;1% normalizes for slightly different windows). `+
     (oem?`“% of OEM” estimates real capacity vs. the genuine cell. `:'')+
-    `Everything is stored in your browser; use Export to back up or move your set.`;
+    `The published set loads from battery_set.json; runs you add are saved in your browser. Use Export to save or share a set.`;
 }
 
 /* ---------- controls ---------- */
@@ -298,9 +330,26 @@ document.querySelectorAll('#metric button').forEach(btn=>btn.onclick=()=>{
 const fileInput=document.getElementById('fileInput');
 document.getElementById('addBtn').onclick=()=>fileInput.click();
 fileInput.onchange=()=>{addFiles(fileInput.files);fileInput.value='';};
-document.getElementById('resetBtn').onclick=()=>{
-  if(confirm('Reset and remove all runs? Any batteries you added will be removed.')){
-    runs=STARTER.slice();off.clear();save();render();toast('Reset to starter set');}};
+function updateUnloadBtn(){
+  const b=document.getElementById('unloadBtn');if(!b)return;
+  b.style.display = publishedRuns.length ? '' : 'none';
+  b.textContent = baselineUnloaded ? 'Reload published' : 'Unload published';
+}
+document.getElementById('unloadBtn').onclick=()=>{
+  const ur=userRunsList();
+  baselineUnloaded=!baselineUnloaded;
+  rebuildRuns(ur);save();render();updateUnloadBtn();
+  toast(baselineUnloaded?'Published data unloaded — load your own to compare':'Published data reloaded');
+};
+document.getElementById('resetBtn').onclick=async()=>{
+  if(!confirm('Reset to the published data?\n\nThis clears everything you have loaded or added and reloads battery_set.json.')) return;
+  try{localStorage.removeItem('btnUserRuns');localStorage.removeItem('btnUnloaded');
+      localStorage.removeItem('btnRuns');localStorage.removeItem('btnInit');}catch(e){}
+  baselineUnloaded=false;off.clear();
+  await fetchPublished();
+  rebuildRuns([]);render();updateUnloadBtn();
+  toast(publishedRuns.length?'Reset to published data':'battery_set.json not found');
+};
 document.getElementById('exportBtn').onclick=()=>{
   const blob=new Blob([JSON.stringify(runs)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);
@@ -317,7 +366,13 @@ window.addEventListener('drop',e=>{e.preventDefault();dc=0;drop.classList.remove
 /* ---------- toast ---------- */
 let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2600);}
 
-render();
+async function init(){
+  baselineUnloaded=(localStorage.getItem('btnUnloaded')==='1');
+  rebuildRuns(loadUserRuns());render();        // show the visitor's own data right away
+  await fetchPublished();                        // then pull battery_set.json from this folder
+  rebuildRuns(loadUserRuns());render();updateUnloadBtn();
+}
+init();
 window.addEventListener('resize',draw);
 </script>
 </body>
