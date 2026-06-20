@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3DS Battery Comparison — Drag &amp; Drop</title>
+<style>
+  :root{
+    --bg:#f7f8fa;--panel:#fff;--ink:#0f172a;--muted:#64748b;--line:#e8edf3;
+    --font:'Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    --mono:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;--accent:#2563eb;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);padding:22px}
+  .wrap{max-width:1120px;margin:0 auto}
+  h1{font-size:21px;margin:0 0 2px;letter-spacing:-.3px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;
+        box-shadow:0 1px 2px rgba(15,23,42,.04);position:relative}
+  .controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+  .seg{display:inline-flex;background:#eef2f7;border-radius:9px;padding:3px}
+  .seg button{border:0;background:transparent;padding:7px 14px;border-radius:7px;font-size:13px;
+        font-weight:600;color:var(--muted);cursor:pointer;font-family:var(--font)}
+  .seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.12)}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:9px;padding:7px 13px;font-size:12.5px;
+       font-weight:600;color:var(--ink);cursor:pointer;font-family:var(--font)}
+  .btn:hover{background:#f8fafc}
+  .btn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .btn.ghost{color:var(--muted)}
+  svg{width:100%;height:auto;display:block;touch-action:none}
+  .legend{display:flex;flex-wrap:wrap;gap:7px;margin:12px 2px 2px}
+  .chip{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line);border-radius:999px;
+        padding:5px 8px 5px 12px;font-size:12.5px;cursor:pointer;user-select:none;background:#fff;font-weight:600}
+  .chip.off{opacity:.32;filter:grayscale(.6)}
+  .sw{width:11px;height:11px;border-radius:3px}
+  .chip small{color:var(--muted);font-weight:500;font-family:var(--mono)}
+  .chip .x{margin-left:3px;width:16px;height:16px;border-radius:50%;display:grid;place-items:center;
+        color:#94a3b8;font-size:14px;line-height:1}
+  .chip .x:hover{background:#fee2e2;color:#dc2626}
+  table{border-collapse:collapse;width:100%;margin-top:8px;font-size:13px}
+  th,td{text-align:right;padding:8px 12px;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.4px}
+  td.brand{font-weight:700}
+  .bar{height:7px;border-radius:4px;display:inline-block;vertical-align:middle;margin-left:8px}
+  tr.oemrow td{background:#fafafa}
+  td .rm{cursor:pointer;color:#cbd5e1;font-weight:700;padding:0 4px}
+  td .rm:hover{color:#dc2626}
+  .tip{position:fixed;pointer-events:none;background:#0f172a;color:#fff;padding:7px 10px;border-radius:8px;
+       font-size:12px;font-family:var(--mono);opacity:0;transition:opacity .08s;z-index:9;white-space:nowrap;
+       box-shadow:0 4px 14px rgba(0,0,0,.25)}
+  .drop{position:absolute;inset:0;border-radius:14px;background:rgba(37,99,235,.07);
+        border:2.5px dashed var(--accent);display:none;place-items:center;z-index:20;pointer-events:none}
+  .drop.show{display:grid}
+  .drop div{font-size:17px;font-weight:700;color:var(--accent);text-align:center}
+  .empty{display:grid;place-items:center;height:360px;text-align:center;color:var(--muted)}
+  .empty b{display:block;font-size:16px;color:var(--ink);margin-bottom:6px}
+  .foot{color:var(--muted);font-size:11.5px;margin-top:14px;line-height:1.5}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;
+        padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .25s,transform .25s;z-index:30}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+  input[type=file]{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>New Nintendo 3DS (KTR-001) — Battery Comparison</h1>
+  <div class="sub">Drag Battery&nbsp;Mark&nbsp;v2 CSV files anywhere onto the chart to add them. Your set is saved automatically.</div>
+
+  <div class="card" id="card">
+    <div class="drop" id="drop"><div>Drop Battery&nbsp;Mark CSV files to add them<br><span style="font-weight:500;font-size:13px">(or a previously exported .json to restore a set)</span></div></div>
+    <div class="controls">
+      <div class="seg" id="metric">
+        <button data-m="pct" class="on">Battery %</button>
+        <button data-m="volt">Voltage</button>
+        <button data-m="temp">Temp °C</button>
+      </div>
+      <div class="spacer"></div>
+      <button class="btn primary" id="addBtn">+ Add CSV files</button>
+      <button class="btn" id="exportBtn">Export set</button>
+      <button class="btn ghost" id="resetBtn">Reset</button>
+      <input type="file" id="fileInput" accept=".csv,.json" multiple>
+    </div>
+    <svg id="chart" viewBox="0 0 1000 520" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="card" style="margin-top:16px">
+    <table id="tbl"></table>
+    <div class="foot" id="foot"></div>
+  </div>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const STARTER = [];
+
+const FIXED={'OEM':'#111827','XYIRMCYF2026':'#2563eb','CameronSino2026':'#0d9488','iFixit2024':'#d97706','Ostent2026':'#dc2626'};
+const LABELS={'OEM':'OEM (genuine Nintendo)','XYIRMCYF2026':'XYIRMCYF','CameronSino2026':'Cameron Sino','iFixit2024':'iFixit','Ostent2026':'Ostent'};
+const POOL=['#7c3aed','#db2777','#0891b2','#65a30d','#4f46e5','#be123c','#c026d3','#0284c7','#16a34a','#ca8a04','#9333ea','#e11d48'];
+const DASH=['','7,5','2,4','9,4,2,4'];
+
+/* ---------- persistence ---------- */
+function save(){try{localStorage.setItem('btnRuns',JSON.stringify(runs));localStorage.setItem('btnInit','1');}catch(e){}}
+let runs;
+try{
+  if(localStorage.getItem('btnInit')) runs=JSON.parse(localStorage.getItem('btnRuns')||'[]');
+  else { runs=STARTER.slice(); save(); }
+}catch(e){ runs=STARTER.slice(); }
+
+/* ---------- CSV parsing (Battery Mark v2) ---------- */
+function parseCSV(filename,text){
+  const m=filename.match(/(\d{4})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(.+)\.csv$/i);
+  let name,date='',clock='';
+  if(m){date=m[2]+'/'+m[3];clock=m[4]+':'+m[5];name=m[7];}
+  else name=filename.replace(/\.csv$/i,'');
+  const rows=[];let range=null;
+  for(const line of text.split(/\r?\n/)){
+    const p=line.split(',').map(s=>s.trim());
+    if(/^\d{2}:\d{2}:\d{2}$/.test(p[0]) && p.length>=5){
+      const pct=parseInt(p[1]),per1=parseFloat(p[2]),volt=parseFloat(p[3]),temp=parseInt(p[4]);
+      if(!isNaN(pct)&&!isNaN(per1)&&!isNaN(volt)) rows.push({pct,per1,volt,temp:isNaN(temp)?null:temp});
+    }
+    const rm=line.match(/(\d+)%\s*->\s*(\d+)%/);
+    if(rm) range=[+rm[1],+rm[2]];
+  }
+  if(rows.length<3) return null;
+  let cum=0;const elapsed=[],pct=[],volt=[],temp=[];
+  for(const r of rows){elapsed.push(+(cum/60).toFixed(2));pct.push(r.pct);volt.push(r.volt);temp.push(r.temp);cum+=r.per1;}
+  return {id:filename.toLowerCase(),name,date,clock,elapsed,pct,volt,temp,
+          total:+(cum/60).toFixed(1),range:range||[pct[0],pct[pct.length-1]]};
+}
+
+function addFiles(fileList){
+  let added=0,skipped=0,imported=0;
+  const arr=[...fileList];let pending=arr.length;
+  if(!pending) return;
+  arr.forEach(file=>{
+    const rd=new FileReader();
+    rd.onload=()=>{
+      try{
+        if(/\.json$/i.test(file.name)){
+          const data=JSON.parse(rd.result);
+          if(Array.isArray(data)&&data.every(r=>r.elapsed&&r.pct)){runs=data;imported++;}
+        }else{
+          const r=parseCSV(file.name,rd.result);
+          if(!r){skipped++;}
+          else if(runs.some(x=>x.id===r.id)){skipped++;}
+          else{runs.push(r);added++;}
+        }
+      }catch(e){skipped++;}
+      if(--pending===0){
+        save();render();
+        let msg=[];
+        if(imported)msg.push('Restored set from file');
+        if(added)msg.push(added+' run'+(added>1?'s':'')+' added');
+        if(skipped)msg.push(skipped+' skipped (duplicate or unrecognized)');
+        toast(msg.join(' · ')||'Nothing to add');
+      }
+    };
+    rd.readAsText(file);
+  });
+}
+
+function removeRun(id){runs=runs.filter(r=>r.id!==id);save();render();}
+function removeBrand(name){runs=runs.filter(r=>r.name!==name);save();render();}
+
+/* ---------- derived ---------- */
+function brandsPresent(){return [...new Set(runs.map(r=>r.name))];}
+function brandMean(b){const r=runs.filter(x=>x.name===b);return r.reduce((a,d)=>a+d.total,0)/r.length;}
+function colorFor(name,idx){return FIXED[name]||POOL[idx%POOL.length];}
+function labelFor(name){return LABELS[name]||name.replace(/(\d{4})$/,' $1').replace(/([a-z])([A-Z])/g,'$1 $2').trim();}
+let colorMap={};
+function rebuildColors(){
+  colorMap={};let p=0;
+  const bs=brandsPresent().sort((a,b)=>brandMean(b)-brandMean(a));
+  bs.forEach(b=>{ if(FIXED[b])colorMap[b]=FIXED[b]; else colorMap[b]=POOL[p++%POOL.length]; });
+}
+function runIndex(r){const same=runs.filter(x=>x.name===r.name).sort((a,b)=>(a.id>b.id?1:-1));return same.indexOf(r);}
+function runCount(b){return runs.filter(r=>r.name===b).length;}
+
+/* ---------- chart ---------- */
+const SVG='http://www.w3.org/2000/svg';
+const W=1000,H=520,P={l:62,r:24,t:18,b:54};
+const chart=document.getElementById('chart');
+const tip=document.getElementById('tip');
+let metric='pct';
+const off=new Set();
+const METRICS={pct:{label:'Battery level (%)',min:0,max:100,fmt:v=>v+'%'},
+  volt:{label:'Voltage under load (V)',min:null,max:null,fmt:v=>v.toFixed(2)+'V'},
+  temp:{label:'Temperature (°C)',min:null,max:null,fmt:v=>v+'°C'}};
+
+function el(t,a){const e=document.createElementNS(SVG,t);for(const k in a)e.setAttribute(k,a[k]);return e;}
+function line(x1,y1,x2,y2,c,w){chart.appendChild(el('line',{x1,y1,x2,y2,stroke:c,'stroke-width':w}));}
+function txt(x,y,s,anch,c,sz,wt){const t=el('text',{x,y,'text-anchor':anch,fill:c,'font-size':sz,'font-family':'var(--font)'});if(wt)t.setAttribute('font-weight',wt);t.textContent=s;chart.appendChild(t);}
+function txtRot(x,y,s,c,sz,wt){const t=el('text',{x,y,fill:c,'font-size':sz,'text-anchor':'middle',transform:`rotate(-90 ${x} ${y})`});if(wt)t.setAttribute('font-weight',wt);t.textContent=s;chart.appendChild(t);}
+function niceTicks(min,max,n){const span=max-min||1,s0=span/n,mag=Math.pow(10,Math.floor(Math.log10(s0))),nm=s0/mag;
+  const step=(nm<1.5?1:nm<3?2:nm<7?5:10)*mag,out=[];for(let v=Math.ceil(min/step)*step;v<=max+1e-9;v+=step)out.push(+v.toFixed(6));return out;}
+
+function visibleRuns(){return runs.filter(r=>!off.has(r.name));}
+function bounds(){
+  let xmax=0,ymin=Infinity,ymax=-Infinity;
+  visibleRuns().forEach(d=>{
+    xmax=Math.max(xmax,d.elapsed[d.elapsed.length-1]);
+    d[metric].forEach(v=>{if(v==null)return;ymin=Math.min(ymin,v);ymax=Math.max(ymax,v);});
+  });
+  const m=METRICS[metric];
+  if(m.min!=null)ymin=m.min; if(m.max!=null)ymax=m.max;
+  if(metric!=='pct'){const pad=(ymax-ymin)*0.08||0.05;ymin-=pad;ymax+=pad;}
+  if(!isFinite(xmax)||xmax<=0){xmax=1;} if(!isFinite(ymin)){ymin=0;ymax=1;}
+  return {xmax:xmax*1.02,ymin,ymax};
+}
+function draw(){
+  chart.innerHTML='';
+  if(visibleRuns().length===0){
+    txt(W/2,H/2,'No batteries to show — add CSV files or un-hide a battery',' middle','#94a3b8',15);
+    chart._b=null;return;
+  }
+  const b=bounds();
+  const X=v=>P.l+(v/b.xmax)*(W-P.l-P.r);
+  const Y=v=>H-P.b-((v-b.ymin)/(b.ymax-b.ymin))*(H-P.t-P.b);
+  niceTicks(b.ymin,b.ymax,6).forEach(t=>{line(P.l,Y(t),W-P.r,Y(t),'#eef2f7',1);
+    txt(P.l-10,Y(t)+4,metric==='volt'?t.toFixed(2):Math.round(t),'end','#94a3b8',11);});
+  niceTicks(0,b.xmax,8).forEach(t=>txt(X(t),H-P.b+20,Math.round(t),'middle','#94a3b8',11));
+  txt((P.l+W-P.r)/2,H-12,'Elapsed discharge time (minutes)','middle','#475569',12,600);
+  txtRot(16,(P.t+H-P.b)/2,METRICS[metric].label,'#475569',12,600);
+  line(P.l,P.t,P.l,H-P.b,'#cbd5e1',1);line(P.l,H-P.b,W-P.r,H-P.b,'#cbd5e1',1);
+  visibleRuns().forEach(d=>{
+    const c=colorMap[d.name],isOem=d.name==='OEM',dash=DASH[runIndex(d)%DASH.length];
+    let path='';let started=false;
+    d.elapsed.forEach((e,i)=>{const v=d[metric][i];if(v==null){return;}path+=(started?'L':'M')+X(e).toFixed(1)+' '+Y(v).toFixed(1)+' ';started=true;});
+    const p=el('path',{d:path,fill:'none',stroke:c,'stroke-width':isOem?3.4:2.1,'stroke-linecap':'round','stroke-linejoin':'round',opacity:isOem?0.97:0.82});
+    if(dash)p.setAttribute('stroke-dasharray',dash);
+    chart.appendChild(p);
+  });
+  chart._b=b;chart._X=X;chart._Y=Y;
+}
+chart.addEventListener('pointermove',e=>{
+  const b=chart._b;if(!b)return;
+  const r=chart.getBoundingClientRect(),sx=(e.clientX-r.left)/r.width*W;
+  const xv=(sx-P.l)/(W-P.l-P.r)*b.xmax;
+  if(xv<0||xv>b.xmax){tip.style.opacity=0;return;}
+  let html='<b>'+xv.toFixed(0)+' min</b>',any=false;
+  visibleRuns().forEach(d=>{let i=0;while(i<d.elapsed.length-1&&d.elapsed[i]<xv)i++;
+    const v=d[metric][i];if(v==null)return;any=true;
+    html+='<br><span style="color:'+colorMap[d.name]+'">●</span> '+labelFor(d.name)+(runCount(d.name)>1?' #'+(runIndex(d)+1):'')+': '+METRICS[metric].fmt(v);});
+  if(!any){tip.style.opacity=0;return;}
+  tip.innerHTML=html;tip.style.opacity=1;
+  tip.style.left=Math.min(e.clientX+14,window.innerWidth-230)+'px';
+  tip.style.top=Math.min(e.clientY+14,window.innerHeight-160)+'px';
+});
+chart.addEventListener('pointerleave',()=>tip.style.opacity=0);
+
+/* ---------- legend + table ---------- */
+function fmtT(min){const h=Math.floor(min/60),mm=(min-h*60);return h+'h '+mm.toFixed(0).padStart(2,'0')+'m';}
+function render(){
+  rebuildColors();
+  draw();
+  // legend
+  const legend=document.getElementById('legend');legend.innerHTML='';
+  brandsPresent().sort((a,b)=>brandMean(b)-brandMean(a)).forEach(b=>{
+    const n=runCount(b),c=document.createElement('div');c.className='chip'+(off.has(b)?' off':'');
+    c.innerHTML=`<span class="sw" style="background:${colorMap[b]}"></span>${labelFor(b)} <small>${fmtT(brandMean(b))} avg${n>1?' · '+n:''}</small><span class="x" title="Remove">×</span>`;
+    c.onclick=ev=>{if(ev.target.classList.contains('x')){removeBrand(b);return;}off.has(b)?off.delete(b):off.add(b);render();};
+    legend.appendChild(c);
+  });
+  // table
+  const tbl=document.getElementById('tbl');
+  if(runs.length===0){tbl.innerHTML='';document.getElementById('foot').textContent='';return;}
+  const oem=runs.find(r=>r.name==='OEM')?brandMean('OEM'):null;
+  const rows=[...runs].sort((a,b)=>b.total-a.total),maxT=Math.max(...rows.map(r=>r.total));
+  let html='<tr><th>Battery / run</th><th>Runtime</th><th>min&nbsp;per&nbsp;1%</th>'+(oem?'<th>% of OEM</th>':'')+'<th></th><th></th></tr>';
+  rows.forEach(d=>{
+    const span=Math.abs(d.range[0]-d.range[1])||90;
+    const time=(d.date||d.clock)?`${d.date} ${d.clock}`:'';
+    html+=`<tr class="${d.name==='OEM'?'oemrow':''}">`+
+      `<td class="brand" style="color:${colorMap[d.name]}">${labelFor(d.name)} <span style="color:#94a3b8;font-weight:500">${time}</span></td>`+
+      `<td>${fmtT(d.total)}</td><td>${(d.total/span).toFixed(2)}</td>`+
+      (oem?`<td>${(d.total/oem*100).toFixed(0)}%</td>`:'')+
+      `<td style="width:28%"><span class="bar" style="width:${d.total/maxT*100}%;background:${colorMap[d.name]}"></span></td>`+
+      `<td><span class="rm" title="Remove this run" data-id="${d.id}">×</span></td></tr>`;
+  });
+  tbl.innerHTML=html;
+  tbl.querySelectorAll('.rm').forEach(x=>x.onclick=()=>removeRun(x.dataset.id));
+  document.getElementById('foot').innerHTML=
+    `${runs.length} run${runs.length>1?'s':''} across ${brandsPresent().length} batter${brandsPresent().length>1?'ies':'y'}. `+
+    `Runtime is measured over each test's discharge window (min&nbsp;per&nbsp;1% normalizes for slightly different windows). `+
+    (oem?`“% of OEM” estimates real capacity vs. the genuine cell. `:'')+
+    `Everything is stored in your browser; use Export to back up or move your set.`;
+}
+
+/* ---------- controls ---------- */
+document.querySelectorAll('#metric button').forEach(btn=>btn.onclick=()=>{
+  document.querySelectorAll('#metric button').forEach(x=>x.classList.remove('on'));
+  btn.classList.add('on');metric=btn.dataset.m;draw();});
+const fileInput=document.getElementById('fileInput');
+document.getElementById('addBtn').onclick=()=>fileInput.click();
+fileInput.onchange=()=>{addFiles(fileInput.files);fileInput.value='';};
+document.getElementById('resetBtn').onclick=()=>{
+  if(confirm('Reset and remove all runs? Any batteries you added will be removed.')){
+    runs=STARTER.slice();off.clear();save();render();toast('Reset to starter set');}};
+document.getElementById('exportBtn').onclick=()=>{
+  const blob=new Blob([JSON.stringify(runs)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='battery_set_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+  toast('Exported '+runs.length+' runs');};
+
+/* ---------- drag & drop ---------- */
+const card=document.getElementById('card'),drop=document.getElementById('drop');let dc=0;
+['dragenter','dragover'].forEach(ev=>window.addEventListener(ev,e=>{e.preventDefault();dc++;drop.classList.add('show');}));
+['dragleave','drop'].forEach(ev=>window.addEventListener(ev,e=>{e.preventDefault();dc=Math.max(0,dc-1);if(dc===0)drop.classList.remove('show');}));
+window.addEventListener('drop',e=>{e.preventDefault();dc=0;drop.classList.remove('show');
+  if(e.dataTransfer.files&&e.dataTransfer.files.length)addFiles(e.dataTransfer.files);});
+
+/* ---------- toast ---------- */
+let tt;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('show'),2600);}
+
+render();
+window.addEventListener('resize',draw);
+</script>
+</body>
+</html>
